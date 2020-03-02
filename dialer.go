@@ -1,12 +1,44 @@
 package manconn
 
 import (
+	"errors"
 	"io"
 	"net"
+	"reflect"
 	"sync"
+	"time"
+
+	"github.com/uber/tchannel-go"
+	"github.com/uber/tchannel-go/json"
 )
 
-func DialConnPair(dispatcherAddr string) ([2]net.Conn, error) {
+func setLatency(sid, cmdAddr string, latency LatencyAdder) error {
+	ch, err := tchannel.NewChannel("cmd-client", nil)
+	if err != nil {
+		log.Errorf("Could not create channel: %v.", err)
+	}
+	server := ch.Peers().Add(cmdAddr)
+
+	ctx, cancel := json.NewContext(time.Second * 3)
+	defer cancel()
+
+	var resp Response
+	config := LatencyConfig{
+		Sid:    sid,
+		Config: interface{}(latency),
+		Type:   reflect.TypeOf(latency).Elem().Name(),
+	}
+	if err := json.CallPeer(ctx, server, "CommandService", "setLatency", &config, &resp); err != nil {
+		return err
+	}
+	if resp.Success {
+		return nil
+	} else {
+		return errors.New(resp.Err)
+	}
+}
+
+func DialConnPair(dispatcherAddr, cmdAddr string, latency LatencyAdder) ([2]net.Conn, string, error) {
 	errCh := make(chan error, 2)
 	var conns [2]net.Conn
 	var wg sync.WaitGroup
@@ -40,8 +72,13 @@ func DialConnPair(dispatcherAddr string) ([2]net.Conn, error) {
 	select {
 	case err := <-errCh:
 		log.Infof("Dial to %v error: %v.", dispatcherAddr, err)
-		return [2]net.Conn{}, err
+		return [2]net.Conn{}, "", err
 	default:
 	}
-	return conns, nil
+
+	err := setLatency(sid, cmdAddr, latency)
+	if err != nil {
+		return [2]net.Conn{}, "", err
+	}
+	return conns, sid, nil
 }

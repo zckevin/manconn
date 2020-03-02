@@ -2,6 +2,7 @@ package manconn
 
 import (
 	"time"
+	"math/rand"
 )
 
 type LatencyAdder interface {
@@ -12,8 +13,12 @@ type DummyLatencyAdder struct {
 	Latency time.Duration
 }
 
+func addRandomness(t time.Duration) time.Duration {
+    return time.Duration(float64(t) * ((rand.Float64() - 0.5) / 5 + 1))
+}
+
 func (la *DummyLatencyAdder) Next() time.Duration {
-	return la.Latency
+	return addRandomness(la.Latency)
 }
 
 type TimeRangeLatencyAdder struct {
@@ -24,7 +29,7 @@ type TimeRangeLatencyAdder struct {
 	start time.Time
 }
 
-func newTimeRangeLatencyAdder(o, r, n time.Duration) *TimeRangeLatencyAdder {
+func NewTimeRangeLatencyAdder(o, r, n time.Duration) *TimeRangeLatencyAdder {
 	la := TimeRangeLatencyAdder{
 		Old:   o,
 		Range: r,
@@ -36,8 +41,8 @@ func newTimeRangeLatencyAdder(o, r, n time.Duration) *TimeRangeLatencyAdder {
 
 func (la *TimeRangeLatencyAdder) Next() time.Duration {
 	if time.Now().After(la.start.Add(la.Range)) {
-		return la.New
+	    return addRandomness(la.New)
 	} else {
-		return la.Old
+	    return addRandomness(la.Old)
 	}
 }

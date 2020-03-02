@@ -7,28 +7,35 @@ import (
 	"time"
 )
 
+const MSS = 1500
+const STREAM_ID_LENGTH = 8
+const WAIT_FOR_PAIR_TIME = time.Second * 5
+
 type Dispatcher struct {
 	waiting map[string]waiter
 	streams map[string]*stream
 
-	addr string
+	dispatcherAddr string
+	cmdAddr        string
 
 	mu sync.Mutex
 }
 
 func NewDispatcher() *Dispatcher {
 	d := Dispatcher{
-		waiting: make(map[string]waiter),
-		streams: make(map[string]*stream),
-		addr:    "localhost:18081",
+		waiting:        make(map[string]waiter),
+		streams:        make(map[string]*stream),
+		dispatcherAddr: "localhost:18081",
+		cmdAddr:        "localhost:18082",
 	}
-	go d.accept()
+	d.acceptCmds()
+	go d.acceptConns()
 	return &d
 }
 
 // goroutine
-func (d *Dispatcher) accept() {
-	ln, err := net.Listen("tcp", d.addr)
+func (d *Dispatcher) acceptConns() {
+	ln, err := net.Listen("tcp", d.dispatcherAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -40,9 +47,6 @@ func (d *Dispatcher) accept() {
 		go d.waitForMatching(conn)
 	}
 }
-
-const STREAM_ID_LENGTH = 8
-const WAIT_FOR_PAIR_TIME = time.Second * 5
 
 func (d *Dispatcher) waitForMatching(conn net.Conn) {
 	buf := make([]byte, STREAM_ID_LENGTH)
@@ -194,7 +198,7 @@ type direction struct {
 	srcUpload   *bandwidthLimitter
 	dstDownload *bandwidthLimitter
 
-	delay LatencyAdder
+	latency LatencyAdder
 
 	sink *dataSink
 }
@@ -206,18 +210,21 @@ func newDirection(src, dst net.Conn, s *stream) *direction {
 		dst:         dst,
 		srcUpload:   &bandwidthLimitter{},
 		dstDownload: &bandwidthLimitter{},
-		// delay:       &DummyLatencyAdder{
-		//     Latency: time.Millisecond * 100,
-		// },
-		delay: newTimeRangeLatencyAdder(time.Millisecond, time.Second*3, time.Second),
-		sink:  newDataSink(),
+		latency: &DummyLatencyAdder{
+			Latency: time.Millisecond * 0,
+		},
+		// latency: NewTimeRangeLatencyAdder(time.Millisecond, time.Second*3, time.Second),
+		sink: newDataSink(),
 	}
 	go di.readloop()
 	go di.writeloop()
 	return &di
 }
 
-const MSS = 1500
+func (di *direction) setLatency(latency LatencyAdder) {
+	log.Debugf("Change latency from %+v to %+v.", di.latency, latency)
+	di.latency = latency
+}
 
 func (di *direction) readloop() {
 	for {
@@ -230,7 +237,7 @@ func (di *direction) readloop() {
 
 		seg := &segment{
 			data: buf[:n],
-			due:  time.Now().Add(di.delay.Next()),
+			due:  time.Now().Add(di.latency.Next()),
 		}
 		// may block
 		di.srcUpload.use(len(seg.data))

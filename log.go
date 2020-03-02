@@ -26,10 +26,11 @@ func init() {
 		EncodeCaller:   zapcore.ShortCallerEncoder, // 全路径编码器
 	}
 
-	level := zap.LevelFlag("level", zap.DebugLevel, "zap log level")
+	// level := zap.LevelFlag("level", zap.DebugLevel, "zap log level")
 	// flag.Parse()
 
-	atom := zap.NewAtomicLevelAt(*level)
+	// atom := zap.NewAtomicLevelAt(*level)
+	atom := zap.NewAtomicLevelAt(zap.DebugLevel)
 	config := zap.Config{
 		Level:       atom, // 日志级别
 		Development: true, // 开发模式，堆栈跟踪

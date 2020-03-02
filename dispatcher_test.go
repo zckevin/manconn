@@ -10,7 +10,14 @@ import (
 func TestDispatcher(t *testing.T) {
 	d := NewDispatcher()
 	time.Sleep(time.Millisecond * 50)
-	conns, err := DialConnPair(d.addr)
+
+	c := TimeRangeLatencyAdder{
+		Old:   time.Second * 0,
+		Range: time.Second * 1,
+		New:   time.Second * 5,
+	}
+
+	conns, _, err := DialConnPair(d.dispatcherAddr, d.cmdAddr, &c)
 	if err != nil {
 		panic(err)
 	}
